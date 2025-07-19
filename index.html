@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RoadSnap</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-database-compat.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', sans-serif;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: #f3f4f6;
+    }
+
+    body::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: url('highway.jpg'); /* Ensure highway.jpg is in the same directory or provide a public URL */
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      background-attachment: fixed;
+      filter: brightness(0.6) contrast(1.1);
+      z-index: -2;
+    }
+
+    body::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.5);
+      z-index: -1;
+    }
+
+    .app-container {
+      background-color: rgba(0, 0, 0, 0.75);
+      border-radius: 1.5rem;
+      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.4);
+      padding: 2.5rem;
+      max-width: 400px; /* Adjusted max-width for container to fit smaller camera */
+      width: 100%;
+      z-index: 1;
+      text-align: center;
+    }
+
+    /* Style for video and img elements (camera feed and captured photo) */
+    video, img {
+      border-radius: 1rem;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      width: 100%; /* Make video and image responsive within their max-width */
+      max-width: 320px; /* Smaller camera/image size */
+      height: auto;
+      background-color: #e2e8f0; /* Placeholder background */
+      margin-left: auto; /* Center the video/image within its container */
+      margin-right: auto; /* Center the video/image within its container */
+    }
+
+    /* Style for buttons to fit dark theme */
+    .app-container button {
+      transition: all 0.2s ease-in-out;
+      transform: translateY(0);
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+    .app-container button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 10px rgba(0, 0, 0, 0.4);
+    }
+    .app-container button:active {
+        transform: translateY(0);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .bg-blue-600 { background-color: #2563eb; }
+    .bg-green-600 { background-color: #16a34a; }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <h1 class="text-5xl font-extrabold mb-6 text-white uppercase tracking-wider leading-tight">RoadSnap</h1>
+    
+    <video id="camera" autoplay playsinline class="w-full rounded-xl border border-gray-600 mb-4 shadow-lg"></video>
+    <button onclick="captureAndUpload()" class="bg-blue-600 text-white px-6 py-3 rounded-lg mb-6 hover:bg-blue-700 font-semibold text-lg">Capture & Submit</button>
+    <canvas id="canvas" class="hidden"></canvas>
+
+    <p id="status" class="mt-6 text-md text-gray-300"></p>
+  </div>
+
+  <script>
+    // Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyC1kdsAMAZvqMrlHq72V-0UqHAjflf91Pk",
+      authDomain: "pavement-calculate.firebaseapp.com",
+      databaseURL: "https://pavement-calculate-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "pavement-calculate",
+      storageBucket: "pavement-calculate.firebasestorage.app",
+      messagingSenderId: "75200850472",
+      appId: "1:75200850472:web:aff9ac89c2e4280b67231d",
+      measurementId: "G-PTCVSTE0B7"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+
+    // Open back camera
+    const video = document.getElementById('camera');
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      .then(stream => {
+        video.srcObject = stream;
+        video.play();
+        document.getElementById('status').innerText = "Camera ready";
+      })
+      .catch(err => {
+        console.error("Camera access error:", err);
+        document.getElementById('status').innerText = "Camera error: " + err.message;
+        alert("Camera error: " + err.message);
+      });
+
+    // Function to classify image using your deployed YOLOv8 model API
+    async function classifyImage(imageUrl) {
+      // 🔁 IMPORTANT: Replace "https://your-model-api.com/classify" with the actual URL
+      // of your deployed YOLOv8 model's API endpoint.
+      // This API should accept an image URL and return distressType and severity.
+      const apiUrl = "https://your-model-api.com/classify"; 
+
+      try {
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageUrl: imageUrl })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text(); // Get raw text for better debugging
+          throw new Error(`Model API request failed: ${response.status} ${response.statusText} - ${errorText}`);
+        }
+
+        const data = await response.json();
+        // Ensure your model API returns 'distressType' and 'severity' in its JSON response
+        return {
+          distressType: data.distressType || "Unknown",
+          severity: data.severity || "Unknown"
+        };
+      } catch (error) {
+        console.error("Error classifying image with model API:", error);
+        // Fallback to specific error values if API call fails
+        return { distressType: "Classification_Error", severity: "Classification_Error" }; // Use distinct error values
+      }
+    }
+
+    async function captureAndUpload() {
+      const canvas = document.getElementById('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg'));
+
+      document.getElementById('status').innerText = "⏳ Getting GPS...";
+
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+        const timestamp = new Date().toISOString();
+
+        document.getElementById('status').innerText = "⏫ Uploading image...";
+
+        const formData = new FormData();
+        formData.append("file", blob);
+        formData.append("upload_preset", "Pavement"); // Make sure "Pavement" is your actual upload preset name
+
+        try {
+          const cloudinaryRes = await fetch("https://api.cloudinary.com/v1_1/drttssntp/image/upload", {
+            method: "POST",
+            body: formData
+          });
+
+          if (!cloudinaryRes.ok) {
+              const errorData = await cloudinaryRes.json();
+              throw new Error(`Cloudinary upload failed: ${errorData.error ? errorData.error.message : cloudinaryRes.statusText}`);
+          }
+
+          const cloudinaryData = await cloudinaryRes.json();
+          const imageUrl = cloudinaryData.secure_url;
+
+          document.getElementById('status').innerText = "🧠 Classifying distress...";
+
+          // Call the classifyImage function with the Cloudinary URL
+          const { distressType, severity } = await classifyImage(imageUrl);
+
+          // --- NEW LOGIC: Check for classification error before uploading to DB ---
+          if (distressType === "Classification_Error" || severity === "Classification_Error") {
+              document.getElementById('status').innerText = "❌ Classification failed. Data not uploaded.";
+              alert("Image classification failed. Data will not be saved to database.");
+              console.warn("Classification error detected. Aborting database upload.");
+              return; // Stop the function here
+          }
+          // --- END NEW LOGIC ---
+
+          const record = {
+            distressType,
+            severity,
+            lat,
+            lon,
+            timestamp,
+            imageUrl
+          };
+
+          await database.ref("pavement_records").push(record);
+          document.getElementById('status').innerText = "✅ Uploaded successfully!";
+        } catch (err) {
+          console.error("Upload process failed:", err);
+          document.getElementById('status').innerText = "❌ Upload failed: " + err.message;
+          alert("Upload failed: " + err.message);
+        }
+      }, err => {
+        console.error("GPS error:", err);
+        let errorMessage = "Unable to get GPS location.";
+        switch (err.code) {
+            case err.PERMISSION_DENIED:
+                errorMessage += " Please enable location services in your device settings and grant permission to the browser.";
+                break;
+            case err.POSITION_UNAVAILABLE:
+                errorMessage += " Location information is unavailable. Try moving to an open area.";
+                break;
+            case err.TIMEOUT:
+                errorMessage += " The request to get your location timed out. Try again.";
+                break;
+            default:
+                errorMessage += ` An unknown error occurred: ${err.message || JSON.stringify(err)}.`;
+                break;
+        }
+        document.getElementById('status').innerText = `❌ ${errorMessage}`;
+        alert(errorMessage);
+      }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+    }
+  </script>
+</body>
+</html>
